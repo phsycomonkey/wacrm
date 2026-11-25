@@ -443,7 +443,7 @@ function ConversationItem({
   const dateLocale = getDateLocale(useLocale());
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || t("unknown");
-  const initials = displayName.charAt(0).toUpperCase();
+  const initials = (Array.from(displayName)[0] ?? "?").toUpperCase();
 
   const handleClick = useCallback(() => {
     onSelect(conversation);
