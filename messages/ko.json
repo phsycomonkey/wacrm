@@ -1980,6 +1980,7 @@
       "wabaNotSubscribed": "WhatsApp 비즈니스 계정이 이 앱에 구독되어 있지 않아 Meta가 수신 웹훅을 전달하지 않습니다. 액세스 토큰을 다시 입력하고 저장해 구독하세요."
     },
     "sections": {
+      "teams": "Teams",
       "overview": "개요",
       "profile": "내 프로필",
       "security": "로그인 & 보안",

@@ -9,6 +9,7 @@ import {
   Shield,
   Tags,
   User,
+  Network,
   UsersRound,
   Zap,
   type LucideIcon,
@@ -33,6 +34,7 @@ export const SETTINGS_SECTIONS = [
   'inbox',
   'fields',
   'deals',
+  'teams',
   'members',
   'api',
 ] as const;
@@ -60,6 +62,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   inbox: { id: 'inbox', label: 'Inbox', icon: Inbox, group: 'workspace' },
   fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace' },
   deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
+  teams: { id: 'teams', label: 'Teams', icon: Network, group: 'workspace' },
   members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace' },
   api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace' },
 };

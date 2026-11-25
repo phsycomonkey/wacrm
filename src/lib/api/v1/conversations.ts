@@ -16,6 +16,8 @@ export interface ApiConversation {
   status: string;
   assigned_agent_id: string | null;
   bot_locked: boolean;
+  assigned_team_id: string | null;
+  assigned_member_id: string | null;
   last_message_text: string | null;
   last_message_at: string | null;
   unread_count: number;
@@ -59,6 +61,8 @@ export function serializeConversation(conv: Conversation): ApiConversation {
     status: conv.status,
     assigned_agent_id: conv.assigned_agent_id ?? null,
     bot_locked: conv.bot_locked ?? false,
+    assigned_team_id: conv.assigned_team_id ?? null,
+    assigned_member_id: conv.assigned_member_id ?? null,
     last_message_text: conv.last_message_text ?? null,
     last_message_at: conv.last_message_at ?? null,
     unread_count: conv.unread_count ?? 0,

@@ -1980,6 +1980,7 @@
       "wabaNotSubscribed": "La cuenta de WhatsApp Business no está suscrita a esta app, así que Meta no entregará webhooks entrantes. Vuelve a ingresar el token de acceso y guarda de nuevo para suscribirla."
     },
     "sections": {
+      "teams": "Teams",
       "overview": "Resumen",
       "profile": "Tu perfil",
       "security": "Acceso y seguridad",

@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { canSendMessages } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag, CustomField } from "@/types";
+import type { Contact, Deal, ContactNote, Tag, CustomField, FollowUp } from "@/types";
 import {
   Phone,
   Copy,
@@ -15,6 +15,9 @@ import {
   DollarSign,
   StickyNote,
   ListChecks,
+  ChevronDown,
+  CalendarClock,
+  CheckCircle2,
   Plus,
   X,
 } from "lucide-react";
@@ -55,7 +58,6 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
-  const [savingTags, setSavingTags] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
   // Inline-editable contact details and custom field values. Saved on blur so
@@ -63,6 +65,16 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
   const [details, setDetails] = useState({ name: "", email: "", company: "" });
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
+  // Custom fields start collapsed so the panel stays short; the header shows
+  // how many are filled in.
+  const [fieldsOpen, setFieldsOpen] = useState(false);
+  const [authors, setAuthors] = useState<Record<string, string>>({});
+  const [showAllNotes, setShowAllNotes] = useState(false);
+  const [noteKind, setNoteKind] = useState<"note" | "handoff">("note");
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  const [fuOpen, setFuOpen] = useState(false);
+  const [fuWhen, setFuWhen] = useState("");
+  const [fuNote, setFuNote] = useState("");
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -92,6 +104,24 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
         .select("custom_field_id, value")
         .eq("contact_id", contact.id),
     ]);
+
+    const [fuRes, profRes] = await Promise.all([
+      supabase
+        .from("follow_ups")
+        .select("*")
+        .eq("contact_id", contact.id)
+        .is("done_at", null)
+        .order("due_at"),
+      supabase.from("profiles").select("user_id, full_name"),
+    ]);
+    if (fuRes.data) setFollowUps(fuRes.data as FollowUp[]);
+    if (profRes.data) {
+      const map: Record<string, string> = {};
+      for (const row of profRes.data as { user_id: string; full_name: string | null }[]) {
+        if (row.full_name) map[row.user_id] = row.full_name;
+      }
+      setAuthors(map);
+    }
 
     setDetails({
       name: contact.name ?? "",
@@ -128,23 +158,30 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
     fetchContactData();
   }, [fetchContactData]);
 
+  // Optimistic: the chip appears or disappears at once and the request runs in
+  // the background. Only a failure reverts it, so adding several tags in a row
+  // never waits on a full reload.
   const handleToggleTag = useCallback(async (tagId: string) => {
-    if (!contact || savingTags) return;
+    if (!contact) return;
     const assignedTag = tags.find((tag) => tag.id === tagId);
-    setSavingTags(true);
+    const previous = tags;
+    if (assignedTag) {
+      setTags((cur) => cur.filter((tag) => tag.id !== tagId));
+    } else {
+      const full = allTags.find((tag) => tag.id === tagId);
+      if (full) setTags((cur) => [...cur, { ...full, contact_tag_id: `pending-${tagId}` }]);
+    }
     try {
       if (assignedTag) await deleteContactTag(contact.id, tagId);
       else await addContactTag(contact.id, tagId);
-      await fetchContactData();
     } catch (error) {
+      setTags(previous);
       console.error("Failed to update contact tags from inbox:", error);
       toast.error(
         error instanceof Error ? error.message : tSidebar("tagUpdateFailed"),
       );
-    } finally {
-      setSavingTags(false);
     }
-  }, [contact, fetchContactData, savingTags, tags, tSidebar]);
+  }, [contact, allTags, tags, tSidebar]);
 
   const saveDetail = useCallback(
     async (key: "name" | "email" | "company") => {
@@ -197,6 +234,53 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
     [contact, customValues, canManageContactTags, tSidebar],
   );
 
+  const addFollowUp = useCallback(async () => {
+    if (!contact || !accountId || !fuWhen) return;
+    const supabase = createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const { data, error } = await supabase
+      .from("follow_ups")
+      .insert({
+        account_id: accountId,
+        contact_id: contact.id,
+        due_at: new Date(fuWhen).toISOString(),
+        note: fuNote.trim() || null,
+        created_by: session?.user?.id ?? null,
+      })
+      .select()
+      .single();
+    if (error || !data) {
+      toast.error("Could not save the follow-up.");
+      return;
+    }
+    setFollowUps((cur) => [...cur, data as FollowUp].sort((a, b) => a.due_at.localeCompare(b.due_at)));
+    setFuWhen("");
+    setFuNote("");
+    setFuOpen(false);
+    toast.success("Follow-up saved.");
+  }, [contact, accountId, fuWhen, fuNote]);
+
+  const completeFollowUp = useCallback(async (id: string) => {
+    setFollowUps((cur) => cur.filter((f) => f.id !== id));
+    const { error } = await createClient()
+      .from("follow_ups")
+      .update({ done_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) {
+      toast.error("Could not mark it done.");
+      fetchContactData();
+    }
+  }, [fetchContactData]);
+
+  const quickWhen = (days: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    setFuWhen(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T09:00`);
+  };
+
   const handleCopyPhone = useCallback(async () => {
     // Copies whatever the row displays — a BSUID-only contact has no
     // phone number to copy, but its @username still identifies them.
@@ -227,7 +311,7 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
         contact_id: contact.id,
         account_id: accountId,
         user_id: user?.id,
-        note_text: newNote.trim(),
+        note_text: (noteKind === "handoff" ? "[Handoff] " : "") + newNote.trim(),
       })
       .select()
       .single();
@@ -333,8 +417,7 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
               {canManageContactTags && (
                 <DropdownMenu>
                   <DropdownMenuTrigger
-                    disabled={savingTags}
-                    style={{ cursor: savingTags ? "not-allowed" : "pointer" }}
+                    style={{ cursor: "pointer" }}
                     className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
                   >
                     <Plus className="h-3 w-3" />
@@ -355,8 +438,7 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
                             key={tag.id}
                             checked={tags.some((assigned) => assigned.id === tag.id)}
                             onCheckedChange={() => void handleToggleTag(tag.id)}
-                            disabled={savingTags}
-                            style={{ cursor: savingTags ? "default" : "pointer" }}
+                            style={{ cursor: "pointer" }}
                             className="text-sm text-popover-foreground"
                           >
                             <span
@@ -392,8 +474,7 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
                         aria-label={tSidebar("removeTag", { tag: tag.name })}
                         title={tSidebar("removeTag", { tag: tag.name })}
                         onClick={() => void handleToggleTag(tag.id)}
-                        disabled={savingTags}
-                        style={{ cursor: savingTags ? "default" : "pointer" }}
+                        style={{ cursor: "pointer" }}
                         className="rounded-full opacity-70 transition-opacity hover:opacity-100 disabled:opacity-40"
                       >
                         <X className="h-3 w-3" />
@@ -408,35 +489,48 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
           {/* Divider */}
           <div className="my-4 border-t border-border" />
 
-          {/* Custom fields */}
+          {/* Custom fields (collapsed by default) */}
           {customFields.length > 0 && (
             <>
               <div>
-                <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={() => setFieldsOpen((o) => !o)}
+                  aria-expanded={fieldsOpen}
+                  className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground hover:bg-muted"
+                >
                   <ListChecks className="h-3 w-3" />
-                  {tSidebar("customFields")}
-                </div>
-                <div className="mt-2 space-y-2">
-                  {customFields.map((field) => (
-                    <label key={field.id} className="block">
-                      <span className="px-1 text-[10px] text-muted-foreground">
-                        {field.field_name}
-                      </span>
-                      <input
-                        value={customValues[field.id] ?? ""}
-                        onChange={(e) =>
-                          setCustomValues((v) => ({ ...v, [field.id]: e.target.value }))
-                        }
-                        onBlur={() => void saveCustomValue(field.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                        }}
-                        disabled={!canManageContactTags}
-                        className="mt-0.5 w-full rounded-lg border border-transparent bg-muted px-3 py-1.5 text-xs text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 disabled:opacity-70"
-                      />
-                    </label>
-                  ))}
-                </div>
+                  <span className="flex-1">
+                    {tSidebar("customFields")}
+                    <span className="ml-1 normal-case tracking-normal">
+                      ({customFields.filter((f) => (customValues[f.id] ?? "").trim()).length}/{customFields.length} filled)
+                    </span>
+                  </span>
+                  <ChevronDown className={cn("h-3 w-3 transition-transform", fieldsOpen && "rotate-180")} />
+                </button>
+                {fieldsOpen && (
+                  <div className="mt-2 space-y-2">
+                    {customFields.map((field) => (
+                      <label key={field.id} className="block">
+                        <span className="px-1 text-[10px] text-muted-foreground">
+                          {field.field_name}
+                        </span>
+                        <input
+                          value={customValues[field.id] ?? ""}
+                          onChange={(e) =>
+                            setCustomValues((v) => ({ ...v, [field.id]: e.target.value }))
+                          }
+                          onBlur={() => void saveCustomValue(field.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          disabled={!canManageContactTags}
+                          className="mt-0.5 w-full rounded-lg border border-transparent bg-muted px-3 py-1.5 text-xs text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 disabled:opacity-70"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Divider */}
@@ -488,13 +582,135 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
           {/* Divider */}
           <div className="my-4 border-t border-border" />
 
+          {/* Follow-ups */}
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <CalendarClock className="h-3 w-3" />
+                Follow-ups
+              </div>
+              {canManageContactTags && (
+                <button
+                  type="button"
+                  onClick={() => setFuOpen((o) => !o)}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add
+                </button>
+              )}
+            </div>
+            {fuOpen && (
+              <div className="mt-2 space-y-2 rounded-lg bg-muted p-2">
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    ["Tomorrow", 1],
+                    ["In 3 days", 3],
+                    ["Next week", 7],
+                  ].map(([label, d]) => (
+                    <button
+                      key={label as string}
+                      type="button"
+                      onClick={() => quickWhen(d as number)}
+                      className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="datetime-local"
+                  value={fuWhen}
+                  onChange={(e) => setFuWhen(e.target.value)}
+                  aria-label="Follow-up date and time"
+                  className="w-full rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground outline-none"
+                />
+                <input
+                  value={fuNote}
+                  onChange={(e) => setFuNote(e.target.value)}
+                  placeholder="What to follow up on"
+                  aria-label="Follow-up note"
+                  className="w-full rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground outline-none"
+                />
+                <Button
+                  size="sm"
+                  className="h-7 w-full text-xs"
+                  disabled={!fuWhen}
+                  onClick={() => void addFollowUp()}
+                >
+                  Save follow-up
+                </Button>
+              </div>
+            )}
+            <div className="mt-2 space-y-1.5">
+              {followUps.length === 0 ? (
+                <p className="px-1 text-xs text-muted-foreground">Nothing scheduled</p>
+              ) : (
+                followUps.map((f) => {
+                  const overdue = new Date(f.due_at) < new Date();
+                  return (
+                    <div key={f.id} className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className={cn(
+                            "text-xs font-medium",
+                            overdue ? "text-destructive" : "text-foreground",
+                          )}
+                        >
+                          {overdue ? "Overdue · " : ""}
+                          {format(new Date(f.due_at), "PP HH:mm", { locale: dateLocale })}
+                        </p>
+                        {f.note && <p className="text-xs text-muted-foreground">{f.note}</p>}
+                      </div>
+                      {canManageContactTags && (
+                        <button
+                          type="button"
+                          onClick={() => void completeFollowUp(f.id)}
+                          aria-label="Mark follow-up done"
+                          title="Mark done"
+                          className="text-muted-foreground hover:text-primary"
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="my-4 border-t border-border" />
+
           {/* Notes */}
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <StickyNote className="h-3 w-3" />
               {tSidebar("notes")}
+              {notes.length > 0 && (
+                <span className="normal-case tracking-normal">({notes.length})</span>
+              )}
             </div>
             <div className="mt-2">
+              <div className="mb-1 flex gap-1">
+                {(["note", "handoff"] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setNoteKind(k)}
+                    aria-pressed={noteKind === k}
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[11px]",
+                      noteKind === k
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {k === "note" ? "Note" : "Handoff note"}
+                  </button>
+                ))}
+              </div>
               <div className="flex gap-2">
                 <textarea
                   value={newNote}
@@ -508,25 +724,40 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
                   className="h-auto bg-primary px-2 hover:bg-primary/90"
                   onClick={handleAddNote}
                   disabled={!newNote.trim() || addingNote}
+                  aria-label="Add note"
                 >
                   <Plus className="h-3 w-3" />
                 </Button>
               </div>
 
               <div className="mt-2 space-y-2">
-                {notes.map((note) => (
-                  <div
-                    key={note.id}
-                    className="rounded-lg bg-muted px-3 py-2"
+                {(showAllNotes ? notes : notes.slice(0, 3)).map((note) => {
+                  const handoff = note.note_text.startsWith("[Handoff] ");
+                  const text = handoff ? note.note_text.slice(10) : note.note_text;
+                  return (
+                    <div key={note.id} className="rounded-lg bg-muted px-3 py-2">
+                      {handoff && (
+                        <span className="mb-1 inline-block rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+                          Handoff
+                        </span>
+                      )}
+                      <p className="whitespace-pre-wrap text-xs text-muted-foreground">{text}</p>
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        {authors[note.user_id] ? `${authors[note.user_id]} · ` : ""}
+                        {format(new Date(note.created_at), "PP HH:mm", { locale: dateLocale })}
+                      </p>
+                    </div>
+                  );
+                })}
+                {notes.length > 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllNotes((v) => !v)}
+                    className="px-1 text-xs font-medium text-primary hover:underline"
                   >
-                    <p className="whitespace-pre-wrap text-xs text-muted-foreground">
-                      {note.note_text}
-                    </p>
-                    <p className="mt-1 text-[10px] text-muted-foreground">
-                      {format(new Date(note.created_at), "PP HH:mm", { locale: dateLocale })}
-                    </p>
-                  </div>
-                ))}
+                    {showAllNotes ? "Show fewer notes" : `Show earlier notes (${notes.length - 3})`}
+                  </button>
+                )}
               </div>
             </div>
           </div>

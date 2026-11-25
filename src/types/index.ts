@@ -198,6 +198,9 @@ export interface Conversation {
   /** CWB: the bot owns this chat; agents can read but not reply. */
   bot_locked?: boolean;
   bot_locked_at?: string | null;
+  /** CWB: team and named staff member the chat is routed to. */
+  assigned_team_id?: string | null;
+  assigned_member_id?: string | null;
 }
 
 // ============================================================
@@ -714,4 +717,41 @@ export interface QuickReply {
   interactive_payload?: InteractiveMessagePayload | null;
   created_at: string;
   updated_at: string;
+}
+
+/** CWB: a team (sales, operations, admin, other). */
+export type TeamKind = 'sales' | 'operations' | 'admin' | 'other';
+
+export interface Team {
+  id: string;
+  account_id: string;
+  name: string;
+  kind: TeamKind;
+  created_at: string;
+}
+
+/** CWB: a named staff member. They do not need a login. */
+export interface TeamMember {
+  id: string;
+  account_id: string;
+  team_id: string;
+  name: string;
+  phone: string | null;
+  user_id: string | null;
+  role_label: string | null;
+  created_at: string;
+}
+
+/** CWB: a dated reminder to follow up with a contact. */
+export interface FollowUp {
+  id: string;
+  account_id: string;
+  contact_id: string;
+  conversation_id: string | null;
+  due_at: string;
+  note: string | null;
+  assigned_member_id: string | null;
+  created_by: string | null;
+  done_at: string | null;
+  created_at: string;
 }

@@ -13,6 +13,22 @@ import { canEditSettings } from '@/lib/auth/roles';
 type Tab = 'playground' | 'setup' | 'usage';
 
 export default function AgentsPage() {
+  const { accountRole, profileLoading } = useAuth();
+  if (profileLoading) return null;
+  if (!accountRole || !canEditSettings(accountRole)) {
+    return (
+      <div className="mx-auto mt-16 max-w-md rounded-xl border border-border bg-card p-6 text-center">
+        <h1 className="text-lg font-semibold text-foreground">Admins only</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          AI settings and usage are visible to the owner and admins. Ask an admin if you need a change.
+        </p>
+      </div>
+    );
+  }
+  return <AgentsPageInner />;
+}
+
+function AgentsPageInner() {
   const t = useTranslations('Agents');
   const { accountRole } = useAuth();
   const canViewUsage = accountRole ? canEditSettings(accountRole) : false;

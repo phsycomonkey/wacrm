@@ -63,6 +63,7 @@ import {
 } from "@/lib/whatsapp/template-message-view";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
 import { resolveAssignmentResult } from "@/lib/inbox/assignment";
+import type { Team, TeamMember } from "@/types";
 import {
   businessReactionOn,
   withBusinessReaction,
@@ -234,6 +235,22 @@ export function MessageThread({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profilesVersion, setProfilesVersion] = useState(0);
+  // CWB: teams and named staff, for the assign menu.
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [staff, setStaff] = useState<TeamMember[]>([]);
+  const [localMemberId, setLocalMemberId] = useState<string | null>(null);
+  const memberFromServer = conversation?.assigned_member_id ?? null;
+  useEffect(() => setLocalMemberId(memberFromServer), [conversation?.id, memberFromServer]);
+  useEffect(() => {
+    const supabase = createClient();
+    Promise.all([
+      supabase.from("teams").select("*").order("created_at"),
+      supabase.from("team_members").select("*").order("name"),
+    ]).then(([tRes, mRes]) => {
+      if (tRes.data) setTeams(tRes.data as Team[]);
+      if (mRes.data) setStaff(mRes.data as TeamMember[]);
+    });
+  }, []);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   const [sentTemplates, setSentTemplates] = useState<MessageTemplate[]>([]);
   const sentTemplateNames = useMemo(
@@ -968,6 +985,30 @@ export function MessageThread({
     [conversation, user?.id, t],
   );
 
+  const assignToMember = useCallback(
+    async (m: TeamMember | null) => {
+      if (!conversation) return;
+      setLocalMemberId(m?.id ?? null);
+      if (m) setBotLocked(false);
+      const { error } = await createClient()
+        .from("conversations")
+        .update({
+          assigned_member_id: m?.id ?? null,
+          assigned_team_id: m?.team_id ?? null,
+          assigned_agent_id: m?.user_id ?? null,
+          ...(m ? { bot_locked: false, bot_locked_at: null } : {}),
+        })
+        .eq("id", conversation.id);
+      if (error) {
+        setLocalMemberId(memberFromServer);
+        toast.error(t("assignmentUpdateFailed"));
+        return;
+      }
+      onAssignChange(conversation.id, m?.user_id ?? null);
+    },
+    [conversation, memberFromServer, onAssignChange, t],
+  );
+
   const handleAssignChange = useCallback(
     async (agentId: string | null) => {
       if (!conversation) return;
@@ -1026,9 +1067,14 @@ export function MessageThread({
   );
   const assignedAgentId = conversation.assigned_agent_id ?? null;
   const currentAssignee = profiles.find((p) => p.user_id === assignedAgentId);
-  const assignLabel = assignedAgentId
-    ? (currentAssignee?.full_name ?? t("assigned"))
-    : t("assign");
+  const assignedMember = staff.find((m) => m.id === localMemberId) ?? null;
+  const assignLabel = botLocked
+    ? "AI bot"
+    : assignedMember
+      ? assignedMember.name
+      : assignedAgentId
+        ? (currentAssignee?.full_name ?? t("assigned"))
+        : t("assign");
 
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
@@ -1175,10 +1221,10 @@ export function MessageThread({
             <DropdownMenuTrigger
               className={cn(
                 "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                assignedAgentId ? "text-primary" : "text-muted-foreground"
+                assignedAgentId || assignedMember || botLocked ? "text-primary" : "text-muted-foreground"
               )}
             >
-              <UserPlus className="h-3 w-3" />
+              {botLocked ? <Bot className="h-3 w-3" /> : <UserPlus className="h-3 w-3" />}
               <span className="hidden sm:inline">{assignLabel}</span>
               <ChevronDown className="h-3 w-3" />
             </DropdownMenuTrigger>
@@ -1186,6 +1232,47 @@ export function MessageThread({
               align="end"
               className="border-border bg-popover"
             >
+              <DropdownMenuItem
+                onClick={() => void toggleBot(true)}
+                className={cn("text-sm", botLocked ? "text-primary" : "text-popover-foreground")}
+              >
+                <Bot className="mr-2 h-3.5 w-3.5" />
+                <span className="flex-1">AI bot</span>
+                {botLocked && <Check className="ml-2 h-3 w-3" />}
+              </DropdownMenuItem>
+              {teams.map((team) => {
+                const people = staff.filter((m) => m.team_id === team.id);
+                if (people.length === 0) return null;
+                return (
+                  <div key={team.id}>
+                    <DropdownMenuSeparator className="bg-border" />
+                    <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {team.name}
+                    </div>
+                    {people.map((m) => (
+                      <DropdownMenuItem
+                        key={m.id}
+                        onClick={() => void assignToMember(m)}
+                        className={cn(
+                          "text-sm",
+                          m.id === localMemberId ? "text-primary" : "text-popover-foreground",
+                        )}
+                      >
+                        <span className="flex-1">{m.name}</span>
+                        {m.id === localMemberId && <Check className="ml-2 h-3 w-3" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </div>
+                );
+              })}
+              {profiles.length > 0 && (
+                <>
+                  <DropdownMenuSeparator className="bg-border" />
+                  <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Logins
+                  </div>
+                </>
+              )}
               {profiles.length === 0 ? (
                 <DropdownMenuItem disabled className="text-sm text-muted-foreground">
                   {t("noTeammates")}
@@ -1221,11 +1308,15 @@ export function MessageThread({
                   );
                 })
               )}
-              {assignedAgentId && (
+              {(assignedAgentId || assignedMember || botLocked) && (
                 <>
                   <DropdownMenuSeparator className="bg-border" />
                   <DropdownMenuItem
-                    onClick={() => handleAssignChange(null)}
+                    onClick={() => {
+                      if (botLocked) void toggleBot(false);
+                      void assignToMember(null);
+                      handleAssignChange(null);
+                    }}
                     className="text-sm text-muted-foreground"
                   >
                     {t("unassign")}

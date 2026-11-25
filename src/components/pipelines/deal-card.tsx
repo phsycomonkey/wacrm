@@ -23,7 +23,7 @@ function formatDate(dateStr: string, locale: string) {
 function initials(name?: string, fallback?: string) {
   const source = (name || fallback || "?").trim();
   if (!source) return "?";
-  return source.charAt(0).toUpperCase();
+  return (Array.from(source)[0] ?? "?").toUpperCase();
 }
 
 export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {

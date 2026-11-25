@@ -480,8 +480,18 @@ function ConversationItem({
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {displayName}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium text-foreground">
+              {displayName}
+            </span>
+            {conversation.bot_locked && (
+              <span
+                title="Handled by the AI bot"
+                className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-primary"
+              >
+                AI
+              </span>
+            )}
           </span>
           <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
         </div>
