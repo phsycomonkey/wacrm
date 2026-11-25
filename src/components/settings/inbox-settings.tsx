@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, Timer } from "lucide-react";
+import { Loader2, ShieldCheck, Timer } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { createClient } from "@/lib/supabase/client";
@@ -124,6 +124,95 @@ export function InboxSettings() {
           )}
         </CardContent>
       </Card>
+      <ChatVisibilityCard />
     </section>
+  );
+}
+
+/** Who sees which chats. Enforced in the database (row-level security), not just hidden in the UI. */
+function ChatVisibilityCard() {
+  const { accountId, canEditSettings, profileLoading } = useAuth();
+  const [restricted, setRestricted] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!accountId) return;
+    let cancelled = false;
+    createClient()
+      .from("accounts")
+      .select("restrict_agent_chats")
+      .eq("id", accountId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled && data) setRestricted(!!(data as { restrict_agent_chats: boolean }).restrict_agent_chats);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId]);
+
+  async function choose(next: boolean) {
+    if (!accountId || next === restricted) return;
+    setSaving(true);
+    const { error } = await createClient()
+      .from("accounts")
+      .update({ restrict_agent_chats: next })
+      .eq("id", accountId);
+    setSaving(false);
+    if (error) {
+      toast.error("Could not change who sees which chats.");
+      return;
+    }
+    setRestricted(next);
+    toast.success(next ? "Agents now see only their own chats." : "Everyone with a login sees every chat.");
+  }
+
+  const disabled = !canEditSettings || profileLoading || restricted === null || saving;
+  const options: { value: boolean; title: string; body: string }[] = [
+    {
+      value: false,
+      title: "Everyone sees every chat",
+      body: "Every login can open every conversation. Simple, but a salesperson can read other people's clients.",
+    },
+    {
+      value: true,
+      title: "Agents see only their own chats",
+      body: "An agent sees only chats assigned to them, with those clients and messages. Owners, admins and viewers still see everything. An admin must assign a chat before an agent can open it.",
+    },
+  ];
+
+  return (
+    <Card className="mt-4">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-foreground">
+          <ShieldCheck className="size-4 text-primary" />
+          Who sees which chats
+        </CardTitle>
+        <CardDescription className="text-muted-foreground">
+          Applies to people with the Agent role. Every change anyone makes is recorded under Settings, Activity.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {options.map((o) => (
+          <button
+            key={String(o.value)}
+            type="button"
+            disabled={disabled}
+            onClick={() => void choose(o.value)}
+            aria-pressed={restricted === o.value}
+            className={
+              "w-full rounded-lg border p-3 text-left transition-colors disabled:opacity-60 " +
+              (restricted === o.value ? "border-primary bg-primary/10" : "border-border hover:bg-muted")
+            }
+          >
+            <p className="text-sm font-medium text-foreground">{o.title}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{o.body}</p>
+          </button>
+        ))}
+        {!canEditSettings && (
+          <p className="text-xs text-muted-foreground">Only the owner and admins can change this.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

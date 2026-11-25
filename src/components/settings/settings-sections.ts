@@ -9,6 +9,7 @@ import {
   Shield,
   Tags,
   User,
+  History,
   Network,
   UsersRound,
   Zap,
@@ -36,6 +37,7 @@ export const SETTINGS_SECTIONS = [
   'deals',
   'teams',
   'members',
+  'activity',
   'api',
 ] as const;
 
@@ -63,6 +65,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace' },
   deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
   teams: { id: 'teams', label: 'Teams', icon: Network, group: 'workspace' },
+  activity: { id: 'activity', label: 'Activity', icon: History, group: 'workspace' },
   members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace' },
   api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace' },
 };

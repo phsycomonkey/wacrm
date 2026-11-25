@@ -19,6 +19,7 @@ import { DealsSettings } from '@/components/settings/deals-settings';
 import { InboxSettings } from '@/components/settings/inbox-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { TeamsSettings } from '@/components/settings/teams-settings';
+import { ActivityPanel } from '@/components/settings/activity-panel';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
   resolveSection,
@@ -83,6 +84,7 @@ function SettingsPageInner() {
     inbox: <InboxSettings />,
     deals: <DealsSettings />,
     teams: <TeamsSettings />,
+    activity: <ActivityPanel />,
     members: <MembersTab />,
     api: <ApiKeysSettings />,
   };

@@ -14,6 +14,8 @@ const tablesWithoutDomainData = new Set([
   "account_invitations",
   "member_presence",
   "pending_message_statuses",
+  // CWB: an append-only audit record, not data a person would lose by joining another account.
+  "activity_log",
 ]);
 
 function accountScopedTables(): Set<string> {
