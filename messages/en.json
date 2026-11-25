@@ -351,6 +351,15 @@
       "unknown": "Unknown"
     },
     "messageThread": {
+      "useAi": "Use AI",
+      "botOn": "AI on",
+      "botOnTitle": "Hand this chat to the AI bot and lock replies",
+      "botOffTitle": "Take this chat back from the AI bot",
+      "botLockedBanner": "The AI bot is handling this chat. You can read it, but only the bot can reply.",
+      "takeOver": "Take over",
+      "botToggleFailed": "Could not change the AI setting.",
+      "botOnToast": "AI bot is now handling this chat.",
+      "botOffToast": "You took over this chat.",
       "backToConversations": "Back to conversations",
       "hideContactPanel": "Hide contact panel",
       "showContactPanel": "Show contact panel",
@@ -395,6 +404,7 @@
       "noCustomerMessages": "No customer messages"
     },
     "composer": {
+      "botLockedPlaceholder": "The AI bot is handling this chat. Take over to reply.",
       "draftHint": "Tap the ✨ to draft a reply with AI — you can edit it before sending",
       "sessionExpiredHint": "24-hour session expired. Use a template to re-engage.",
       "templates": "Templates",

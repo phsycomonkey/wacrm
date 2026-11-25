@@ -107,7 +107,15 @@ function InboxPageInner() {
     return () => mq.removeEventListener?.("change", apply);
   }, []);
 
+  // Below `lg` the contact panel cannot sit beside the thread, so on phones it
+  // opens as a full-screen sheet from the same header button.
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+
   const handleToggleContactPanel = useCallback(() => {
+    if (!panelFits) {
+      setMobilePanelOpen((prev) => !prev);
+      return;
+    }
     setContactPanelOpen((prev) => {
       const next = !prev;
       try {
@@ -117,7 +125,7 @@ function InboxPageInner() {
       }
       return next;
     });
-  }, []);
+  }, [panelFits]);
 
   // Fire the deep-link auto-select exactly once per URL — subsequent
   // list refreshes (realtime, manual refetch) must not snap the user
@@ -649,7 +657,7 @@ function InboxPageInner() {
             onBack={handleCloseConversation}
             resyncToken={resyncToken}
             onRefresh={handleManualRefresh}
-            contactPanelOpen={contactPanelOpen}
+            contactPanelOpen={panelFits ? contactPanelOpen : mobilePanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
           />
         </div>
@@ -661,6 +669,28 @@ function InboxPageInner() {
         {contactPanelOpen && panelFits && (
           <div className="hidden lg:block">
             <ContactSidebar contact={activeContact} />
+          </div>
+        )}
+
+        {/* Phone: the same panel as a full-screen sheet. */}
+        {!panelFits && mobilePanelOpen && activeContact && (
+          <div className="fixed inset-0 z-40 flex flex-col bg-card">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <p className="text-sm font-semibold text-foreground">
+                {activeContact.name || activeContact.phone}
+              </p>
+              <button
+                type="button"
+                onClick={() => setMobilePanelOpen(false)}
+                aria-label="Close contact panel"
+                className="rounded-md px-3 py-1 text-sm text-primary hover:bg-primary/10"
+              >
+                Done
+              </button>
+            </div>
+            <div className="min-h-0 flex-1">
+              <ContactSidebar contact={activeContact} className="w-full border-l-0" />
+            </div>
           </div>
         )}
       </div>

@@ -39,9 +39,11 @@ import { planCustomValueWrites } from "@/lib/contacts/custom-value-writes";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  /** Width/border overrides, used when the panel is shown as a phone sheet. */
+  className?: string;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, className }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const dateLocale = getDateLocale(useLocale());
   const tThread = useTranslations("Inbox.messageThread");
@@ -251,7 +253,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const initials = (Array.from(displayName)[0] ?? "?").toUpperCase();
 
   return (
-    <div className="flex h-full w-70 flex-col border-l border-border bg-card">
+    <div className={cn("flex h-full w-70 flex-col border-l border-border bg-card", className)}>
       <ScrollArea className="flex-1">
         <div className="p-4">
           {/* Contact Info */}

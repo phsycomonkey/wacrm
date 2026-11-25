@@ -25,6 +25,7 @@ import {
   Clock,
   ArrowLeft,
   RefreshCw,
+  Bot,
   PanelRightOpen,
   PanelRightClose,
 } from "lucide-react";
@@ -195,6 +196,34 @@ export function MessageThread({
   const { user } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
+
+  // CWB: "Use AI" hands the chat to the bot and locks the composer.
+  const [botLocked, setBotLocked] = useState(false);
+  const [botBusy, setBotBusy] = useState(false);
+  const botLockedFromServer = !!conversation?.bot_locked;
+  useEffect(() => setBotLocked(botLockedFromServer), [conversation?.id, botLockedFromServer]);
+  const toggleBot = useCallback(
+    async (next: boolean) => {
+      if (!conversation) return;
+      setBotBusy(true);
+      setBotLocked(next);
+      const patch = next
+        ? { bot_locked: true, bot_locked_at: new Date().toISOString() }
+        : { bot_locked: false, bot_locked_at: null, assigned_agent_id: user?.id ?? null };
+      const { error } = await createClient()
+        .from("conversations")
+        .update(patch)
+        .eq("id", conversation.id);
+      if (error) {
+        setBotLocked(!next);
+        toast.error(t("botToggleFailed"));
+      } else {
+        toast.success(next ? t("botOnToast") : t("botOffToast"));
+      }
+      setBotBusy(false);
+    },
+    [conversation, user?.id, t],
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const [olderPages, setOlderPages] = useState<{
@@ -1056,6 +1085,22 @@ export function MessageThread({
               smaller laptops; this lets agents reclaim it when they just
               want to read and reply. Hidden on mobile, where the sidebar
               never renders as a permanent panel anyway. Issue #258. */}
+          <button
+            type="button"
+            onClick={() => void toggleBot(!botLocked)}
+            disabled={botBusy}
+            aria-pressed={botLocked}
+            title={botLocked ? t("botOffTitle") : t("botOnTitle")}
+            className={cn(
+              "inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors disabled:opacity-50 lg:h-7",
+              botLocked
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <Bot className="h-4 w-4" />
+            {botLocked ? t("botOn") : t("useAi")}
+          </button>
           {onToggleContactPanel && (
             <button
               type="button"
@@ -1066,7 +1111,7 @@ export function MessageThread({
               title={contactPanelOpen ? t("hideContact") : t("showContact")}
               aria-pressed={contactPanelOpen}
               className={cn(
-                "hidden h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground lg:inline-flex",
+                "inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground lg:h-7 lg:w-7",
                 contactPanelOpen ? "text-primary" : "text-muted-foreground",
               )}
             >
@@ -1296,8 +1341,23 @@ export function MessageThread({
         }}
       />
 
+      {botLocked && (
+        <div className="flex items-center justify-between gap-3 border-t border-border bg-primary/10 px-4 py-2 text-xs text-foreground">
+          <span>{t("botLockedBanner")}</span>
+          <button
+            type="button"
+            onClick={() => void toggleBot(false)}
+            disabled={botBusy}
+            className="shrink-0 rounded-md bg-primary px-3 py-1 font-medium text-primary-foreground disabled:opacity-50"
+          >
+            {t("takeOver")}
+          </button>
+        </div>
+      )}
+
       {/* Composer */}
       <MessageComposer
+        botLocked={botLocked}
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
         onSend={handleSend}

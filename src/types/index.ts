@@ -195,6 +195,9 @@ export interface Conversation {
   ai_autoreply_disabled?: boolean;
   ai_reply_count?: number;
   ai_handoff_summary?: string | null;
+  /** CWB: the bot owns this chat; agents can read but not reply. */
+  bot_locked?: boolean;
+  bot_locked_at?: string | null;
 }
 
 // ============================================================

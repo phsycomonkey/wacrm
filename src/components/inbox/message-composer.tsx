@@ -118,6 +118,8 @@ interface MessageComposerProps {
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
+  /** CWB: the AI bot owns this chat, so agents cannot reply until they take over. */
+  botLocked?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -140,6 +142,7 @@ export function MessageComposer({
   onOpenTemplates,
   replyTo,
   onClearReply,
+  botLocked = false,
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
   const tGate = useTranslations("GatedButton");
@@ -203,7 +206,7 @@ export function MessageComposer({
   // For solo users this is always true — single-owner accounts pass
   // every capability — so the disabled branch is a no-op there.
   const canSend = useCan("send-messages");
-  const readOnly = !canSend;
+  const readOnly = !canSend || botLocked;
   // Media (like free-form text) is only allowed inside the 24h window.
   const inputsDisabled = readOnly || sessionExpired;
 
@@ -754,7 +757,9 @@ export function MessageComposer({
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             placeholder={
-              readOnly
+              botLocked
+                ? t("botLockedPlaceholder")
+                : readOnly
                 ? t("readOnlyPlaceholder")
                 : sessionExpired
                   ? t("sessionExpiredPlaceholder")
