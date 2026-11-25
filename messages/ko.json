@@ -523,7 +523,14 @@
       "removeTag": "{tag} 태그 제거",
       "tagUpdateFailed": "연락처 태그를 업데이트하지 못했습니다.",
       "noDeals": "딜 없음",
-      "addNotePlaceholder": "메모 추가..."
+      "addNotePlaceholder": "메모 추가...",
+      "detailUpdated": "Contact updated.",
+      "detailUpdateFailed": "Could not update the contact.",
+      "fieldUpdateFailed": "Could not save the field.",
+      "namePlaceholder": "Name",
+      "emailPlaceholder": "Email",
+      "companyPlaceholder": "Company",
+      "customFields": "Custom fields"
     },
     "aiBanner": {
       "pausedTitle": "이 대화에서 AI 어시스턴트가 일시 중지됨",

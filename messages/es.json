@@ -523,7 +523,14 @@
       "removeTag": "Quitar {tag}",
       "tagUpdateFailed": "No se pudieron actualizar las etiquetas del contacto.",
       "noDeals": "Sin negocios",
-      "addNotePlaceholder": "Agregar una nota..."
+      "addNotePlaceholder": "Agregar una nota...",
+      "detailUpdated": "Contact updated.",
+      "detailUpdateFailed": "Could not update the contact.",
+      "fieldUpdateFailed": "Could not save the field.",
+      "namePlaceholder": "Name",
+      "emailPlaceholder": "Email",
+      "companyPlaceholder": "Company",
+      "customFields": "Custom fields"
     },
     "aiBanner": {
       "pausedTitle": "El asistente de IA está en pausa aquí",

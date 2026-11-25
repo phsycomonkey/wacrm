@@ -5,16 +5,16 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { canSendMessages } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Deal, ContactNote, Tag, CustomField } from "@/types";
 import {
   Phone,
-  Mail,
   Copy,
   Check,
   User,
   Tag as TagIcon,
   DollarSign,
   StickyNote,
+  ListChecks,
   Plus,
   X,
 } from "lucide-react";
@@ -35,6 +35,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { getDateLocale } from "@/i18n/date-locale";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
 import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
+import { planCustomValueWrites } from "@/lib/contacts/custom-value-writes";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -55,6 +56,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [savingTags, setSavingTags] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  // Inline-editable contact details and custom field values. Saved on blur so
+  // an agent never has to leave the chat to fix a name or set a field.
+  const [details, setDetails] = useState({ name: "", email: "", company: "" });
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [customValues, setCustomValues] = useState<Record<string, string>>({});
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -62,7 +68,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     const supabase = createClient();
 
     // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes, allTagsRes] = await Promise.all([
+    const [dealsRes, notesRes, tagsRes, allTagsRes, fieldsRes, valuesRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*)")
@@ -78,7 +84,26 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
       supabase.from("tags").select("*").order("name"),
+      supabase.from("custom_fields").select("*").order("field_name"),
+      supabase
+        .from("contact_custom_values")
+        .select("custom_field_id, value")
+        .eq("contact_id", contact.id),
     ]);
+
+    setDetails({
+      name: contact.name ?? "",
+      email: contact.email ?? "",
+      company: contact.company ?? "",
+    });
+    if (fieldsRes.data) setCustomFields(fieldsRes.data as CustomField[]);
+    if (valuesRes.data) {
+      const next: Record<string, string> = {};
+      for (const row of valuesRes.data as { custom_field_id: string; value: string | null }[]) {
+        next[row.custom_field_id] = row.value ?? "";
+      }
+      setCustomValues(next);
+    }
 
     if (dealsRes.data) setDeals(dealsRes.data);
     if (notesRes.data) setNotes(notesRes.data);
@@ -118,6 +143,57 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
       setSavingTags(false);
     }
   }, [contact, fetchContactData, savingTags, tags, tSidebar]);
+
+  const saveDetail = useCallback(
+    async (key: "name" | "email" | "company") => {
+      if (!contact || !canManageContactTags) return;
+      const next = details[key].trim();
+      const previous = (contact[key] ?? "").trim();
+      if (next === previous) return;
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("contacts")
+        .update({ [key]: next || null, updated_at: new Date().toISOString() })
+        .eq("id", contact.id);
+      if (error) {
+        toast.error(tSidebar("detailUpdateFailed"));
+        return;
+      }
+      // Keep the parent's object in sync so a later blur compares correctly.
+      (contact as unknown as Record<string, unknown>)[key] = next || null;
+      toast.success(tSidebar("detailUpdated"));
+    },
+    [contact, details, canManageContactTags, tSidebar],
+  );
+
+  const saveCustomValue = useCallback(
+    async (fieldId: string) => {
+      if (!contact || !canManageContactTags) return;
+      const supabase = createClient();
+      const { upserts, clearedFieldIds } = planCustomValueWrites(contact.id, {
+        [fieldId]: customValues[fieldId] ?? "",
+      });
+      try {
+        if (upserts.length > 0) {
+          const { error } = await supabase
+            .from("contact_custom_values")
+            .upsert(upserts, { onConflict: "contact_id,custom_field_id" });
+          if (error) throw error;
+        }
+        if (clearedFieldIds.length > 0) {
+          const { error } = await supabase
+            .from("contact_custom_values")
+            .delete()
+            .eq("contact_id", contact.id)
+            .in("custom_field_id", clearedFieldIds);
+          if (error) throw error;
+        }
+      } catch {
+        toast.error(tSidebar("fieldUpdateFailed"));
+      }
+    },
+    [contact, customValues, canManageContactTags, tSidebar],
+  );
 
   const handleCopyPhone = useCallback(async () => {
     // Copies whatever the row displays — a BSUID-only contact has no
@@ -170,7 +246,9 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   }
 
   const displayName = contact.name || contactHandle(contact);
-  const initials = displayName.charAt(0).toUpperCase();
+  // Array.from splits by code point, so an emoji name does not render as a
+  // broken half-surrogate ("�") the way charAt(0) would.
+  const initials = (Array.from(displayName)[0] ?? "?").toUpperCase();
 
   return (
     <div className="flex h-full w-70 flex-col border-l border-border bg-card">
@@ -215,12 +293,29 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               )}
             </button>
 
-            {contact.email && (
-              <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
-                <Mail className="h-4 w-4 text-muted-foreground" />
-                <span className="truncate">{contact.email}</span>
-              </div>
-            )}
+          </div>
+
+          {/* Editable details */}
+          <div className="mt-2 space-y-2">
+            {([
+              ["name", tSidebar("namePlaceholder")],
+              ["email", tSidebar("emailPlaceholder")],
+              ["company", tSidebar("companyPlaceholder")],
+            ] as const).map(([key, placeholder]) => (
+              <input
+                key={key}
+                value={details[key]}
+                onChange={(e) => setDetails((d) => ({ ...d, [key]: e.target.value }))}
+                onBlur={() => void saveDetail(key)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                }}
+                disabled={!canManageContactTags}
+                placeholder={placeholder}
+                aria-label={placeholder}
+                className="w-full rounded-lg border border-transparent bg-muted px-3 py-1.5 text-xs text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 disabled:opacity-70"
+              />
+            ))}
           </div>
 
           {/* Divider */}
@@ -310,6 +405,42 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
           {/* Divider */}
           <div className="my-4 border-t border-border" />
+
+          {/* Custom fields */}
+          {customFields.length > 0 && (
+            <>
+              <div>
+                <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  <ListChecks className="h-3 w-3" />
+                  {tSidebar("customFields")}
+                </div>
+                <div className="mt-2 space-y-2">
+                  {customFields.map((field) => (
+                    <label key={field.id} className="block">
+                      <span className="px-1 text-[10px] text-muted-foreground">
+                        {field.field_name}
+                      </span>
+                      <input
+                        value={customValues[field.id] ?? ""}
+                        onChange={(e) =>
+                          setCustomValues((v) => ({ ...v, [field.id]: e.target.value }))
+                        }
+                        onBlur={() => void saveCustomValue(field.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                        }}
+                        disabled={!canManageContactTags}
+                        className="mt-0.5 w-full rounded-lg border border-transparent bg-muted px-3 py-1.5 text-xs text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 disabled:opacity-70"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="my-4 border-t border-border" />
+            </>
+          )}
 
           {/* Active Deals */}
           <div>
