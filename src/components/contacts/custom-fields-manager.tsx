@@ -16,6 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { FieldTypeEditor } from '@/components/contacts/field-type-editor';
+import { FIELD_KINDS, draftOf, kindOf, payloadOf, type FieldDraft } from '@/lib/custom-fields/kinds';
 
 interface CustomFieldsManagerProps {
   open: boolean;
@@ -62,6 +64,7 @@ export function CustomFieldsPanel() {
   const [fields, setFields] = useState<CustomField[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState('');
+  const [newDraft, setNewDraft] = useState<FieldDraft>({ kind: 'select', optionsText: '', allowOther: false, teamKind: '' });
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -106,10 +109,14 @@ export function CustomFieldsPanel() {
       return;
     }
 
+    if (newDraft.kind === 'select' && payloadOf(newDraft).field_options?.options && (payloadOf(newDraft).field_options!.options as string[]).length === 0) {
+      toast.error('Add at least one choice for a list.');
+      return;
+    }
     setCreating(true);
     const { error } = await supabase.from('custom_fields').insert({
       field_name: name,
-      field_type: 'text',
+      ...payloadOf(newDraft),
       user_id: user.id,
       account_id: accountId,
     });
@@ -121,6 +128,7 @@ export function CustomFieldsPanel() {
     }
     toast.success(t('toastCreated', { name }));
     setNewName('');
+    setNewDraft({ kind: 'select', optionsText: '', allowOther: false, teamKind: '' });
     await fetchFields();
   }
 
@@ -202,6 +210,10 @@ export function CustomFieldsPanel() {
         </Button>
       </div>
 
+      <div className="rounded-md border border-border p-3">
+        <FieldTypeEditor draft={newDraft} onChange={setNewDraft} />
+      </div>
+
       {/* List */}
       <div className="max-h-72 overflow-y-auto rounded-md border border-border">
         {loading ? (
@@ -222,6 +234,15 @@ export function CustomFieldsPanel() {
                 busy={busyId === field.id}
                 onRename={handleRename}
                 onDelete={handleDelete}
+                onSaveType={async (f, d) => {
+                  const { error } = await supabase.from('custom_fields').update(payloadOf(d)).eq('id', f.id);
+                  if (error) {
+                    toast.error('Could not save the field type.');
+                    return false;
+                  }
+                  await fetchFields();
+                  return true;
+                }}
               />
             ))}
           </ul>
@@ -238,14 +259,19 @@ function FieldRow({
   busy,
   onRename,
   onDelete,
+  onSaveType,
 }: {
   field: CustomField;
   busy: boolean;
   onRename: (field: CustomField, name: string) => Promise<boolean>;
   onDelete: (field: CustomField) => void;
+  onSaveType: (field: CustomField, draft: FieldDraft) => Promise<boolean>;
 }) {
   const t = useTranslations('Contacts.customFields');
   const [name, setName] = useState(field.field_name);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<FieldDraft>(() => draftOf(field));
+  const kindLabel = FIELD_KINDS.find((k) => k.value === kindOf(field))?.label ?? 'Free text';
 
   async function commit() {
     if (name.trim() === field.field_name) {
@@ -257,7 +283,8 @@ function FieldRow({
   }
 
   return (
-    <li className="flex items-center gap-2 px-3 py-2">
+    <li className="px-3 py-2">
+      <div className="flex items-center gap-2">
       <Input
         value={name}
         disabled={busy}
@@ -269,6 +296,13 @@ function FieldRow({
         aria-label={t('renameAria', { name: field.field_name })}
         className="focus:border-primary h-8 border-transparent bg-transparent text-foreground hover:border-border"
       />
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="shrink-0 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        {kindLabel}
+      </button>
       <Button
         variant="ghost"
         size="icon-sm"
@@ -283,6 +317,20 @@ function FieldRow({
           <Trash2 className="size-4" />
         )}
       </Button>
+      </div>
+      {open && (
+        <div className="mt-2 space-y-2 rounded-md border border-border p-3">
+          <FieldTypeEditor draft={draft} onChange={setDraft} />
+          <Button
+            size="sm"
+            onClick={async () => {
+              if (await onSaveType(field, draft)) setOpen(false);
+            }}
+          >
+            Save type
+          </Button>
+        </div>
+      )}
     </li>
   );
 }

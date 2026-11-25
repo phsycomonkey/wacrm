@@ -39,6 +39,7 @@ import { getDateLocale } from "@/i18n/date-locale";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
 import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
 import { planCustomValueWrites } from "@/lib/contacts/custom-value-writes";
+import { CustomFieldInput, useFieldCatalogs } from "@/components/contacts/custom-field-input";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -68,6 +69,7 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
   // Custom fields start collapsed so the panel stays short; the header shows
   // how many are filled in.
   const [fieldsOpen, setFieldsOpen] = useState(false);
+  const catalogs = useFieldCatalogs();
   const [authors, setAuthors] = useState<Record<string, string>>({});
   const [showAllNotes, setShowAllNotes] = useState(false);
   const [noteKind, setNoteKind] = useState<"note" | "handoff">("note");
@@ -206,11 +208,11 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
   );
 
   const saveCustomValue = useCallback(
-    async (fieldId: string) => {
+    async (fieldId: string, value: string) => {
       if (!contact || !canManageContactTags) return;
       const supabase = createClient();
       const { upserts, clearedFieldIds } = planCustomValueWrites(contact.id, {
-        [fieldId]: customValues[fieldId] ?? "",
+        [fieldId]: value,
       });
       try {
         if (upserts.length > 0) {
@@ -231,7 +233,7 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
         toast.error(tSidebar("fieldUpdateFailed"));
       }
     },
-    [contact, customValues, canManageContactTags, tSidebar],
+    [contact, canManageContactTags, tSidebar],
   );
 
   const addFollowUp = useCallback(async () => {
@@ -515,17 +517,14 @@ export function ContactSidebar({ contact, className }: ContactSidebarProps) {
                         <span className="px-1 text-[10px] text-muted-foreground">
                           {field.field_name}
                         </span>
-                        <input
+                        <CustomFieldInput
+                          field={field}
                           value={customValues[field.id] ?? ""}
-                          onChange={(e) =>
-                            setCustomValues((v) => ({ ...v, [field.id]: e.target.value }))
-                          }
-                          onBlur={() => void saveCustomValue(field.id)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
+                          catalogs={catalogs}
                           disabled={!canManageContactTags}
-                          className="mt-0.5 w-full rounded-lg border border-transparent bg-muted px-3 py-1.5 text-xs text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 disabled:opacity-70"
+                          onChange={(v) => setCustomValues((cur) => ({ ...cur, [field.id]: v }))}
+                          onCommit={(v) => void saveCustomValue(field.id, v)}
+                          className="mt-0.5"
                         />
                       </label>
                     ))}

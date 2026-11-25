@@ -755,3 +755,15 @@ export interface FollowUp {
   done_at: string | null;
   created_at: string;
 }
+
+/** CWB: a service the business sells, defined once and picked everywhere. */
+export interface Service {
+  id: string;
+  account_id: string;
+  name: string;
+  price: number | null;
+  currency: string;
+  description: string | null;
+  active: boolean;
+  created_at: string;
+}

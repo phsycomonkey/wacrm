@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { planCustomValueWrites } from '@/lib/contacts/custom-value-writes';
+import { CustomFieldInput, useFieldCatalogs } from '@/components/contacts/custom-field-input';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 
@@ -94,6 +95,7 @@ export function ContactDetailView({
   // Custom fields tab
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
+  const catalogs = useFieldCatalogs();
   const [savingCustom, setSavingCustom] = useState(false);
   const [loadingCustom, setLoadingCustom] = useState(false);
 
@@ -672,16 +674,16 @@ export function ContactDetailView({
                         <Label className="text-muted-foreground text-xs capitalize">
                           {field.field_name}
                         </Label>
-                        <Input
+                        <CustomFieldInput
+                          field={field}
                           value={customValues[field.id] ?? ''}
-                          onChange={(e) =>
+                          catalogs={catalogs}
+                          onChange={(v) =>
                             setCustomValues((prev) => ({
                               ...prev,
-                              [field.id]: e.target.value,
+                              [field.id]: v,
                             }))
                           }
-                          placeholder={t('enterCustomField', { name: field.field_name })}
-                          className="bg-muted border-border text-foreground h-8 text-sm placeholder:text-muted-foreground"
                         />
                       </div>
                     ))}
