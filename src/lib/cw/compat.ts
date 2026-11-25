@@ -278,12 +278,24 @@ async function assign(db: Db, acct: string, conv: Row, body: Row) {
     const tid = Number(body.team_id);
     if (!tid) patch.assigned_team_id = null;
     else {
-      const { data: t } = await db
+      let { data: t } = await db
         .from('teams')
         .select('id')
         .eq('account_id', acct)
         .eq('cw_id', tid)
         .maybeSingle();
+      if (!t && tid <= 9) {
+        // The bot's settings use small team codes: 2 = sales team, anything else = support
+        // (operations, admin or other). Resolve them to the first team of that kind.
+        const kinds = tid === 2 ? ['sales'] : ['operations', 'admin', 'other'];
+        const { data: byKind } = await db
+          .from('teams')
+          .select('id, kind')
+          .eq('account_id', acct)
+          .in('kind', kinds)
+          .order('created_at', { ascending: true });
+        t = (byKind ?? [])[0] ?? null;
+      }
       if (!t) return bad('team not found', 404);
       patch.assigned_team_id = (t as Row).id;
     }
