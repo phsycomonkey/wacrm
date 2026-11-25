@@ -500,6 +500,14 @@ function ConversationItem({
             {conversation.last_message_text || t("noMessagesYet")}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
+            {conversation.unread_count > 0 && timeAgo && (
+              <span
+                title="The client is waiting for a reply"
+                className="rounded bg-red-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-red-400"
+              >
+                Waiting {timeAgo}
+              </span>
+            )}
             {conversation.unread_count > 0 && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
                 {conversation.unread_count}
