@@ -23,6 +23,8 @@ import type { ApiScope } from '@/lib/api-keys/scopes';
 type Row = Record<string, any>;
 type Db = SupabaseClient;
 
+let ORIGIN = '';
+const mediaName = (u: string) => decodeURIComponent((u.split('?')[0].split('/').pop() || 'file'));
 const J = (body: unknown, status = 200) => NextResponse.json(body, { status });
 const bad = (msg: string, status = 400) => J({ error: msg }, status);
 const epoch = (iso?: string | null) =>
@@ -167,7 +169,10 @@ function messageOut(m: Row) {
       ? [
           {
             file_type: m.content_type === 'document' ? 'file' : m.content_type,
-            data_url: m.media_url,
+            // Served through this API: the storage gateway refuses requests without its own key.
+            data_url: `${ORIGIN}/api/cw/api/v1/accounts/1/media/${m.id}`,
+            file_name: mediaName(String(m.media_url)),
+            mime_type: m.media_type ?? null,
             extension: null,
           },
         ]
@@ -361,9 +366,42 @@ export async function handleCw(
     const db = ctx.supabase;
     const acct = ctx.accountId;
     const url = new URL(request.url);
+    ORIGIN = (process.env.NEXT_PUBLIC_SITE_URL || url.origin).replace(/\/$/, '');
     let body: Row = {};
     if (method !== 'GET') {
       body = ((await request.json().catch(() => ({}))) as Row) ?? {};
+    }
+
+    // ---- media: stream an attachment's bytes (the bot cannot reach the storage gateway itself) ----
+    if (head === 'media' && method === 'GET' && rest[1]) {
+      const { data: msg } = await db
+        .from('messages')
+        .select('media_url, media_type, conversation_id')
+        .eq('id', rest[1])
+        .maybeSingle();
+      const m = msg as Row | null;
+      if (!m || !m.media_url) return bad('media not found', 404);
+      const { data: own } = await db
+        .from('conversations')
+        .select('id')
+        .eq('id', m.conversation_id)
+        .eq('account_id', acct)
+        .maybeSingle();
+      if (!own) return bad('media not found', 404);
+      const mm = String(m.media_url).match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/([^?]+)/);
+      if (!mm) return bad('this attachment is not stored yet', 404);
+      const { data: blob, error } = await db.storage
+        .from(mm[1])
+        .download(decodeURIComponent(mm[2]));
+      if (error || !blob) return bad('could not read the file', 502);
+      const buf = Buffer.from(await blob.arrayBuffer());
+      return new NextResponse(buf, {
+        status: 200,
+        headers: {
+          'content-type': m.media_type || blob.type || 'application/octet-stream',
+          'content-length': String(buf.length),
+        },
+      });
     }
 
     // ---- agents / teams ----
