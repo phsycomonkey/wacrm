@@ -456,6 +456,16 @@ function ConversationItem({
       })
     : "";
 
+  // True waiting state from the database: the client wrote last and nobody has
+  // replied since. Independent of whether the chat was opened (unread count).
+  const isWaiting =
+    conversation.status !== "closed" &&
+    !!conversation.last_inbound_at &&
+    (!conversation.last_reply_at || conversation.last_reply_at < conversation.last_inbound_at);
+  const waitingSince = isWaiting
+    ? formatDistanceToNow(new Date(conversation.last_inbound_at as string), { locale: dateLocale })
+    : "";
+
   return (
     <button
       onClick={handleClick}
@@ -500,12 +510,12 @@ function ConversationItem({
             {conversation.last_message_text || t("noMessagesYet")}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
-            {conversation.unread_count > 0 && timeAgo && (
+            {waitingSince && (
               <span
-                title="The client is waiting for a reply"
+                title="The client's last message has not been answered"
                 className="rounded bg-red-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-red-400"
               >
-                Waiting {timeAgo}
+                Waiting {waitingSince}
               </span>
             )}
             {conversation.unread_count > 0 && (
