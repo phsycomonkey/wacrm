@@ -7,6 +7,7 @@
 // /api/v1. Paths: /api/cw/api/v1/accounts/{n}/...
 // ============================================================
 
+import { createHmac, timingSafeEqual } from 'crypto';
 import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -16,6 +17,7 @@ import {
   sendMessageToConversation,
   SendMessageError,
 } from '@/lib/whatsapp/send-message';
+import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { resolveAuditUserId } from '@/lib/api/v1/contacts';
 import type { ApiScope } from '@/lib/api-keys/scopes';
 
@@ -24,6 +26,11 @@ type Row = Record<string, any>;
 type Db = SupabaseClient;
 
 let ORIGIN = '';
+const signMedia = (id: string) =>
+  createHmac('sha256', process.env.SUPABASE_SERVICE_ROLE_KEY || 'cwb')
+    .update('media:' + id)
+    .digest('hex')
+    .slice(0, 40);
 const mediaName = (u: string) => decodeURIComponent((u.split('?')[0].split('/').pop() || 'file'));
 const J = (body: unknown, status = 200) => NextResponse.json(body, { status });
 const bad = (msg: string, status = 400) => J({ error: msg }, status);
@@ -170,7 +177,7 @@ function messageOut(m: Row) {
           {
             file_type: m.content_type === 'document' ? 'file' : m.content_type,
             // Served through this API: the storage gateway refuses requests without its own key.
-            data_url: `${ORIGIN}/api/cw/api/v1/accounts/1/media/${m.id}`,
+            data_url: `${ORIGIN}/api/cw/media/${m.id}?t=${signMedia(m.id)}`,
             file_name: mediaName(String(m.media_url)),
             mime_type: m.media_type ?? null,
             extension: null,
@@ -353,6 +360,40 @@ export async function handleCw(
 ): Promise<Response> {
   try {
     const method = request.method.toUpperCase();
+    // Signed attachment link: the bot's file reader cannot reach the storage gateway itself, and
+    // must never be handed the API key to do so, so the link carries its own signature.
+    if (segments[0] === 'media' && segments[1] && method === 'GET') {
+      const t = new URL(request.url).searchParams.get('t') ?? '';
+      const want = signMedia(segments[1]);
+      const ok =
+        t.length === want.length &&
+        timingSafeEqual(Buffer.from(t), Buffer.from(want));
+      if (!ok) return bad('invalid link', 403);
+      const admin = supabaseAdmin();
+      const { data: msg } = await admin
+        .from('messages')
+        .select('media_url, media_type')
+        .eq('id', segments[1])
+        .maybeSingle();
+      const m = msg as Row | null;
+      if (!m || !m.media_url) return bad('media not found', 404);
+      const mm = String(m.media_url).match(
+        /\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/([^?]+)/
+      );
+      if (!mm) return bad('this attachment is not stored yet', 404);
+      const { data: blob, error } = await admin.storage
+        .from(mm[1])
+        .download(decodeURIComponent(mm[2]));
+      if (error || !blob) return bad('could not read the file', 502);
+      const buf = Buffer.from(await blob.arrayBuffer());
+      return new NextResponse(buf, {
+        status: 200,
+        headers: {
+          'content-type': m.media_type || blob.type || 'application/octet-stream',
+          'content-length': String(buf.length),
+        },
+      });
+    }
     // expect: api / v1 / accounts / {n} / ...rest
     const rest = segments.slice(4);
     const head = rest[0] ?? '';
@@ -370,38 +411,6 @@ export async function handleCw(
     let body: Row = {};
     if (method !== 'GET') {
       body = ((await request.json().catch(() => ({}))) as Row) ?? {};
-    }
-
-    // ---- media: stream an attachment's bytes (the bot cannot reach the storage gateway itself) ----
-    if (head === 'media' && method === 'GET' && rest[1]) {
-      const { data: msg } = await db
-        .from('messages')
-        .select('media_url, media_type, conversation_id')
-        .eq('id', rest[1])
-        .maybeSingle();
-      const m = msg as Row | null;
-      if (!m || !m.media_url) return bad('media not found', 404);
-      const { data: own } = await db
-        .from('conversations')
-        .select('id')
-        .eq('id', m.conversation_id)
-        .eq('account_id', acct)
-        .maybeSingle();
-      if (!own) return bad('media not found', 404);
-      const mm = String(m.media_url).match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/([^?]+)/);
-      if (!mm) return bad('this attachment is not stored yet', 404);
-      const { data: blob, error } = await db.storage
-        .from(mm[1])
-        .download(decodeURIComponent(mm[2]));
-      if (error || !blob) return bad('could not read the file', 502);
-      const buf = Buffer.from(await blob.arrayBuffer());
-      return new NextResponse(buf, {
-        status: 200,
-        headers: {
-          'content-type': m.media_type || blob.type || 'application/octet-stream',
-          'content-length': String(buf.length),
-        },
-      });
     }
 
     // ---- agents / teams ----
